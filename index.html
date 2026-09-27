@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MockLocationLab - Simulador com Rastreador em Tempo Real</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            overflow: hidden;
+        }
+        .container { display: flex; height: 100vh; }
+        #map { flex: 1; height: 100%; }
+        .sidebar {
+            width: 400px;
+            background: #16213e;
+            padding: 15px;
+            overflow-y: auto;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.3);
+        }
+        .sidebar h1 {
+            color: #4ecca3;
+            font-size: 1.3em;
+            margin-bottom: 3px;
+        }
+        .subtitle { color: #888; font-size: 0.75em; margin-bottom: 12px; }
+        
+        /* PAINEL DE RASTREADOR EM TEMPO REAL */
+        .tracker-panel {
+            background: linear-gradient(135deg, #0f3460 0%, #16213e 100%);
+            border: 2px solid #4ecca3;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 12px;
+            position: relative;
+            overflow: hidden;
+        }
+        .tracker-panel::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #4ecca3, #3db892, #4ecca3);
+            animation: scan 2s linear infinite;
+        }
+        @keyframes scan {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        .tracker-title {
+            color: #4ecca3;
+            font-size: 0.85em;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tracker-title::before {
+            content: '';
+            width: 10px; height: 10px;
+            background: #4ecca3;
+            border-radius: 50%;
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .tracker-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(78, 204, 163, 0.2);
+            font-size: 0.85em;
+        }
+        .tracker-row:last-child { border-bottom: none; }
+        .tracker-label {
+            color: #888;
+            font-size: 0.8em;
+        }
+        .tracker-value {
+            color: #4ecca3;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .tracker-address {
+            background: rgba(78, 204, 163, 0.1);
+            border-radius: 6px;
+            padding: 8px;
+            margin-top: 8px;
+            font-size: 0.8em;
+            color: #eee;
+            min-height: 35px;
+        }
+        .tracker-address .label {
+            color: #888;
+            font-size: 0.75em;
+            margin-bottom: 3px;
+        }
+        
+        .search-box {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 12px;
+        }
+        .search-box input {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #0f3460;
+            border-radius: 8px;
+            background: #0f3460;
+            color: #eee;
+            font-size: 0.9em;
+        }
+        .search-box input:focus {
+            outline: none;
+            border-color: #4ecca3;
+        }
+        .search-box button {
+            padding: 10px 15px;
+            background: #4ecca3;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .search-box button:hover { background: #3db892; }
+        
+        .search-results {
+            background: #0f3460;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            max-height: 120px;
+            overflow-y: auto;
+            display: none;
+        }
+        .search-results.active { display: block; }
+        .search-result-item {
+            padding: 8px;
+            cursor: pointer;
+            border-bottom: 1px solid #1a1a2e;
+            font-size: 0.8em;
+        }
+        .search-result-item:hover { background: #1a1a2e; }
+        
+        .status-box {
+            background: #0f3460;
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 12px;
+            border-left: 4px solid #4ecca3;
+        }
+        .status-box.error { border-left-color: #e94560; }
+        .status-box.warning { border-left-color: #f39c12; }
+        .status-label {
+            font-size: 0.7em;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+        .status-value { font-size: 0.95em; font-weight: bold; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .stat-card {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+        }
+        .stat-card .icon { font-size: 1.2em; margin-bottom: 2px; }
+        .stat-card .value {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #4ecca3;
+        }
+        .stat-card .label {
+            font-size: 0.65em;
+            color: #888;
+            margin-top: 2px;
+        }
+        
+        .section-title {
+            color: #4ecca3;
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 12px 0 8px 0;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #0f3460;
+        }
+        .signal-list { list-style: none; }
+        .signal-list li {
+            background: #0f3460;
+            padding: 6px 10px;
+            margin-bottom: 4px;
+            border-radius: 5px;
+            font-size: 0.75em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .signal-list li .strength { color: #4ecca3; font-weight: bold; }
+        
+        .controls {
+            background: #0f3460;
+            border-radius: 10px;
+            padding: 12px;
+            margin-top: 12px;
+        }
+        .control-group { margin-bottom: 10px; }
+        .control-group label {
+            display: block;
+            font-size: 0.75em;
+            color: #888;
+            margin-bottom: 4px;
+        }
+        .control-group input[type="range"] {
+            width: 100%;
+            accent-color: #4ecca3;
+        }
+        .control-group .range-value {
+            text-align: right;
+            font-size: 0.8em;
+            color: #4ecca3;
+            font-weight: bold;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 6px;
+        }
+        .btn-primary { background: #4ecca3; color: #1a1a2e; }
+        .btn-primary:hover:not(:disabled) { background: #3db892; transform: translateY(-2px); }
+        .btn-secondary { background: #f39c12; color: #1a1a2e; }
+        .btn-secondary:hover:not(:disabled) { background: #e67e22; }
+        .btn-danger { background: #e94560; color: white; }
+        .btn-danger:hover:not(:disabled) { background: #d63851; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #0f3460;
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 8px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4ecca3, #3db892);
+            transition: width 0.3s;
+            width: 0%;
+        }
+        
+        .traffic-indicator {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        .traffic-green { background: #27ae60; color: white; }
+        .traffic-yellow { background: #f39c12; color: #1a1a2e; }
+        .traffic-red { background: #e74c3c; color: white; }
+        .traffic-stop { background: #c0392b; color: white; animation: blink 0.5s infinite; }
+        
+        .instructions {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 12px;
+            font-size: 0.75em;
+            line-height: 1.4;
+        }
+        .instructions strong { color: #4ecca3; }
+        
+        .location-info {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 8px;
+            margin-bottom: 12px;
+            font-size: 0.75em;
+        }
+        .location-info .coord {
+            color: #4ecca3;
+            font-family: monospace;
+            font-size: 0.85em;
+        }
+        
+        .leaflet-popup-content-wrapper {
+            background: #16213e;
+            color: #eee;
+        }
+        .leaflet-popup-tip { background: #16213e; }
+        
+        .custom-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        
+        .speed-limit-warning {
+            background: #e74c3c;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-top: 5px;
+            display: none;
+        }
+        .speed-limit-warning.active { display: block; animation: blink 0.5s infinite; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="map"></div>
+        
+        <div class="sidebar">
+            <h1> MockLocationLab</h1>
+            <p class="subtitle">Simulador com Rastreamento em Tempo Real</p>
+
+            <div class="location-info">
+                <div class="status-label">📍 Sua Localização Atual (Início)</div>
+                <div class="coord" id="currentCoords">Obtendo localização...</div>
+            </div>
+
+            <!-- PAINEL DE RASTREADOR EM TEMPO REAL -->
+            <div class="tracker-panel">
+                <div class="tracker-title">🛰️ RASTREADOR EM TEMPO REAL</div>
+                
+                <div class="tracker-row">
+                    <span class="tracker-label">📍 Latitude</span>
+                    <span class="tracker-value" id="trackerLat">-27.000000</span>
+                </div>
+                <div class="tracker-row">
+                    <span class="tracker-label"> Longitude</span>
+                    <span class="tracker-value" id="trackerLng">-48.620000</span>
+                </div>
+                <div class="tracker-row">
+                    <span class="tracker-label"> Direção</span>
+                    <span class="tracker-value" id="trackerDirection">--</span>
+                </div>
+                <div class="tracker-row">
+                    <span class="tracker-label">🚗 Velocidade</span>
+                    <span class="tracker-value" id="trackerSpeed">0 km/h</span>
+                </div>
+                <div class="tracker-row">
+                    <span class="tracker-label">️ Tempo de viagem</span>
+                    <span class="tracker-value" id="trackerTime">00:00</span>
+                </div>
+                <div class="tracker-row">
+                    <span class="tracker-label">📏 Distância percorrida</span>
+                    <span class="tracker-value" id="trackerDistance">0 m</span>
+                </div>
+                <div class="tracker-row">
+                    <span class="tracker-label">🚦 Tráfego</span>
+                    <span class="tracker-value" id="trackerTraffic">
+                        <span class="traffic-indicator traffic-green">LIVRE</span>
+                    </span>
+                </div>
+                
+                <div class="tracker-address">
+                    <div class="label">📍 Endereço aproximado:</div>
+                    <div id="trackerAddress">Aguardando início da simulação...</div>
+                </div>
+                
+                <div class="speed-limit-warning" id="speedWarning">
+                    ⚠️ LIMITE DE VELOCIDADE ULTRAPASSADO!
+                </div>
+            </div>
+
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Digite o endereço de destino...">
+                <button onclick="searchAddress()">🔍</button>
+            </div>
+            
+            <div class="search-results" id="searchResults"></div>
+
+            <div class="status-box" id="statusBox">
+                <div class="status-label">Status</div>
+                <div class="status-value" id="statusText">⏳ Obtendo sua localização...</div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="icon">🛰️</div>
+                    <div class="value" id="satellitesValue">0</div>
+                    <div class="label">Satélites</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon"></div>
+                    <div class="value" id="accuracyValue">0m</div>
+                    <div class="label">Precisão</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon">📍</div>
+                    <div class="value" id="progressValue">0%</div>
+                    <div class="label">Progresso</div>
+                </div>
+            </div>
+
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressBar"></div>
+            </div>
+
+            <button class="btn btn-primary" id="startBtn" disabled>
+                ▶️ INICIAR - Ir até o destino
+            </button>
+            <button class="btn btn-secondary" id="returnBtn" disabled>
+                🏠 RETORNAR - Voltar ao início
+            </button>
+            <button class="btn btn-danger" id="stopBtn" disabled>
+                ⏹ PARAR
+            </button>
+
+            <div class="controls">
+                <div class="control-group">
+                    <label>🚀 Multiplicador de Velocidade</label>
+                    <input type="range" id="speedControl" min="1" max="5" value="1" step="0.5">
+                    <div class="range-value" id="speedControlValue">1x (Tempo Real)</div>
+                </div>
+                <div class="control-group">
+                    <label> Jitter (Variação GPS Realista)</label>
+                    <input type="range" id="jitterControl" min="0" max="50" value="15">
+                    <div class="range-value" id="jitterControlValue">15%</div>
+                </div>
+            </div>
+
+            <div class="section-title">📶 Torres de Celular Simuladas</div>
+            <ul class="signal-list" id="cellTowers">
+                <li><span>Aguardando...</span></li>
+            </ul>
+
+            <div class="section-title">📡 Redes WiFi Simuladas</div>
+            <ul class="signal-list" id="wifiNetworks">
+                <li><span>Aguardando...</span></li>
+            </ul>
+
+            <div class="instructions">
+                <strong>📌 Como usar:</strong><br>
+                1. Permita o acesso à localização<br>
+                2. Digite o endereço OU clique no mapa<br>
+                3. Clique em <strong>INICIAR</strong> para ir<br>
+                4. O rastreador mostra posição em tempo real<br>
+                5. A velocidade respeita limites urbanos<br>
+                6. Clique em <strong>RETORNAR</strong> para voltar
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // Mapa inicial
+        const map = L.map('map').setView([-27.00, -48.62], 13);
+        
+        // Esri World Street Map - GRATUITO
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles © Esri',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Estado da aplicação
+        let homeLocation = null;
+        let destinationLocation = null;
+        let currentLocation = null;
+        let isSimulating = false;
+        let simulationDirection = null;
+        let simulationInterval = null;
+        let currentRoute = [];
+        let currentPointIndex = 0;
+        let speedMultiplier = 1;
+        let jitterAmount = 15;
+        
+        // Variáveis de rastreamento em tempo real
+        let tripStartTime = null;
+        let totalDistanceTraveled = 0;
+        let currentSpeed = 0;
+        let currentDirection = '--';
+        let trafficStatus = 'LIVRE';
+        let isAtTrafficLight = false;
+        let trafficLightTimer = 0;
+        let lastPosition = null;
+
+        // Marcadores
+        let homeMarker = null;
+        let destMarker = null;
+        let currentMarker = null;
+        let routeLine = null;
+        let trailLine = null;
+        let trailPoints = [];
+
+        // Ícones personalizados
+        function createIcon(emoji) {
+            return L.divIcon({
+                className: 'custom-icon',
+                html: emoji,
+                iconSize: [30, 30],
+                iconAnchor: [15, 15]
+            });
+        }
+
+        const homeIcon = createIcon('🏠');
+        const destIcon = createIcon('🎯');
+        const carIcon = createIcon('🚗');
+
+        // Obter localização real do usuário
+        function getUserLocation() {
+            if (!navigator.geolocation) {
+                document.getElementById('statusText').textContent = '❌ Geolocalização não suportada';
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    homeLocation = [position.coords.latitude, position.coords.longitude];
+                    currentLocation = [...homeLocation];
+                    lastPosition = [...homeLocation];
+                    
+                    document.getElementById('currentCoords').textContent = 
+                        `${homeLocation[0].toFixed(6)}, ${homeLocation[1].toFixed(6)}`;
+                    
+                    // Atualizar rastreador
+                    document.getElementById('trackerLat').textContent = homeLocation[0].toFixed(6);
+                    document.getElementById('trackerLng').textContent = homeLocation[1].toFixed(6);
+                    
+                    map.setView(homeLocation, 16);
+                    
+                    homeMarker = L.marker(homeLocation, { icon: homeIcon }).addTo(map);
+                    homeMarker.bindPopup('<b>🏠 Sua Localização (Início)</b>').openPopup();
+                    
+                    document.getElementById('statusText').textContent = 
+                        '✅ Localização obtida! Clique no mapa ou busque um endereço.';
+                    
+                    updateSignalLists();
+                    reverseGeocode(homeLocation);
+                },
+                (error) => {
+                    document.getElementById('statusText').textContent = 
+                        '️ Localização negada. Clique no mapa para definir início.';
+                    document.getElementById('currentCoords').textContent = 'Não disponível';
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
+
+        // Reverse geocoding para mostrar endereço
+        async function reverseGeocode(coords) {
+            try {
+                const response = await fetch(
+                    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords[0]}&lon=${coords[1]}&zoom=18&addressdetails=1`
+                );
+                const data = await response.json();
+                if (data && data.display_name) {
+                    document.getElementById('trackerAddress').textContent = data.display_name;
+                }
+            } catch (error) {
+                console.error('Erro no reverse geocoding:', error);
+            }
+        }
+
+        // Calcular direção (N/S/L/O)
+        function calculateDirection(from, to) {
+            const latDiff = to[0] - from[0];
+            const lngDiff = to[1] - from[1];
+            
+            if (Math.abs(latDiff) > Math.abs(lngDiff)) {
+                return latDiff > 0 ? 'Norte ↑' : 'Sul ↓';
+            } else {
+                return lngDiff > 0 ? 'Leste →' : 'Oeste ←';
+            }
+        }
+
+        // Buscar endereço via Nominatim
+        async function searchAddress() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) return;
+
+            document.getElementById('statusText').textContent = '🔍 Buscando endereço...';
+            
+            try {
+                const response = await fetch(
+                    `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=br`
+                );
+                const data = await response.json();
+                
+                const resultsDiv = document.getElementById('searchResults');
+                resultsDiv.innerHTML = '';
+                
+                if (data.length === 0) {
+                    resultsDiv.innerHTML = '<div class="search-result-item">Nenhum resultado encontrado</div>';
+                    resultsDiv.classList.add('active');
+                    return;
+                }
+                
+                data.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'search-result-item';
+                    div.textContent = item.display_name;
+                    div.onclick = () => selectDestination([parseFloat(item.lat), parseFloat(item.lon)], item.display_name);
+                    resultsDiv.appendChild(div);
+                });
+                
+                resultsDiv.classList.add('active');
+            } catch (error) {
+                document.getElementById('statusText').textContent = '❌ Erro na busca';
+            }
+        }
+
+        // Selecionar destino
+        function selectDestination(coords, name) {
+            destinationLocation = coords;
+            document.getElementById('searchResults').classList.remove('active');
+            document.getElementById('searchInput').value = name.split(',')[0];
+            
+            if (destMarker) map.removeLayer(destMarker);
+            destMarker = L.marker(coords, { icon: destIcon }).addTo(map);
+            destMarker.bindPopup(`<b>🎯 Destino</b><br>${name}`).openPopup();
+            
+            if (homeLocation) {
+                map.fitBounds(L.latLngBounds([homeLocation, coords]), { padding: [50, 50] });
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('statusText').textContent = '✅ Destino definido! Clique em INICIAR.';
+            } else {
+                map.setView(coords, 16);
+                document.getElementById('statusText').textContent = '⚠️ Defina sua localização inicial primeiro';
+            }
+        }
+
+        // Clique no mapa
+        map.on('click', function(e) {
+            const clickedPoint = [e.latlng.lat, e.latlng.lng];
+            
+            if (!homeLocation) {
+                homeLocation = clickedPoint;
+                currentLocation = [...homeLocation];
+                lastPosition = [...homeLocation];
+                homeMarker = L.marker(homeLocation, { icon: homeIcon }).addTo(map);
+                homeMarker.bindPopup('<b>🏠 Localização Inicial</b>').openPopup();
+                document.getElementById('currentCoords').textContent = 
+                    `${homeLocation[0].toFixed(6)}, ${homeLocation[1].toFixed(6)}`;
+                document.getElementById('trackerLat').textContent = homeLocation[0].toFixed(6);
+                document.getElementById('trackerLng').textContent = homeLocation[1].toFixed(6);
+                document.getElementById('statusText').textContent = 
+                    '📍 Início definido! Agora clique no destino.';
+                reverseGeocode(homeLocation);
+            } else if (!destinationLocation || !isSimulating) {
+                selectDestination(clickedPoint, 'Local selecionado no mapa');
+            }
+        });
+
+        // Buscar rota do OSRM
+        async function fetchRoute(start, end) {
+            const url = `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true`;
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.code === 'Ok' && data.routes.length > 0) {
+                    const route = data.routes[0];
+                    return {
+                        coordinates: route.geometry.coordinates.map(c => [c[1], c[0]]),
+                        duration: route.duration, // segundos
+                        distance: route.distance // metros
+                    };
+                }
+            } catch (error) {
+                console.error('Erro ao buscar rota:', error);
+            }
+            return null;
+        }
+
+        // Calcular distância entre dois pontos
+        function calculateDistance(p1, p2) {
+            const R = 6371000;
+            const lat1 = p1[0] * Math.PI / 180;
+            const lat2 = p2[0] * Math.PI / 180;
+            const dLat = (p2[0] - p1[0]) * Math.PI / 180;
+            const dLng = (p2[1] - p1[1]) * Math.PI / 180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        // Adicionar jitter realista
+        function addJitter(lat, lng) {
+            const jLat = (Math.random() - 0.5) * (jitterAmount / 100000);
+            const jLng = (Math.random() - 0.5) * (jitterAmount / 100000);
+            return [lat + jLat, lng + jLng];
+        }
+
+        // Simular semáforo (parada aleatória)
+        function shouldStopAtTrafficLight() {
+            // 5% de chance de parar em cada ponto (simula semáforos)
+            return Math.random() < 0.05;
+        }
+
+        // Calcular velocidade realista baseada no tipo de via
+        function calculateRealisticSpeed(distance, duration, speedMult) {
+            // Velocidade média da rota (m/s)
+            const avgSpeed = distance / duration;
+            
+            // Converter para km/h
+            let speedKmh = avgSpeed * 3.6;
+            
+            // Limitar a velocidade urbana máxima (60 km/h em áreas urbanas)
+            const maxUrbanSpeed = 60;
+            speedKmh = Math.min(speedKmh, maxUrbanSpeed);
+            
+            // Aplicar multiplicador
+            speedKmh = speedKmh * speedMult;
+            
+            // Adicionar variação realista (±20%)
+            const variation = 0.8 + Math.random() * 0.4;
+            speedKmh = speedKmh * variation;
+            
+            // Se estiver no semáforo, velocidade zero
+            if (isAtTrafficLight) {
+                speedKmh = 0;
+            }
+            
+            return Math.round(speedKmh * 10) / 10;
+        }
+
+        // Atualizar painel de rastreamento em tempo real
+        function updateTrackerPanel(position, speed, direction, traffic) {
+            document.getElementById('trackerLat').textContent = position[0].toFixed(6);
+            document.getElementById('trackerLng').textContent = position[1].toFixed(6);
+            document.getElementById('trackerDirection').textContent = direction;
+            document.getElementById('trackerSpeed').textContent = speed.toFixed(1) + ' km/h';
+            
+            // Tempo de viagem
+            if (tripStartTime) {
+                const elapsed = Math.floor((Date.now() - tripStartTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                document.getElementById('trackerTime').textContent = 
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+            
+            // Distância percorrida
+            document.getElementById('trackerDistance').textContent = 
+                totalDistanceTraveled < 1000 
+                    ? Math.round(totalDistanceTraveled) + ' m'
+                    : (totalDistanceTraveled / 1000).toFixed(2) + ' km';
+            
+            // Status de tráfego
+            const trafficEl = document.getElementById('trackerTraffic');
+            if (isAtTrafficLight) {
+                trafficEl.innerHTML = '<span class="traffic-indicator traffic-stop">🚦 PARADO</span>';
+            } else if (traffic === 'LENT') {
+                trafficEl.innerHTML = '<span class="traffic-indicator traffic-yellow">LENT</span>';
+            } else if (traffic === 'CONGESTIONADO') {
+                trafficEl.innerHTML = '<span class="traffic-indicator traffic-red">CONGESTIONADO</span>';
+            } else {
+                trafficEl.innerHTML = '<span class="traffic-indicator traffic-green">LIVRE</span>';
+            }
+            
+            // Aviso de limite de velocidade
+            const speedWarning = document.getElementById('speedWarning');
+            if (speed > 60) {
+                speedWarning.classList.add('active');
+            } else {
+                speedWarning.classList.remove('active');
+            }
+        }
+
+        // INICIAR simulação
+        async function startSimulation() {
+            if (!homeLocation || !destinationLocation) {
+                alert('Defina início e destino primeiro!');
+                return;
+            }
+
+            document.getElementById('statusText').textContent = '🛰️ Calculando rota...';
+            document.getElementById('statusBox').className = 'status-box warning pulsing';
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('returnBtn').disabled = true;
+
+            const routeData = await fetchRoute(homeLocation, destinationLocation);
+            
+            if (!routeData) {
+                document.getElementById('statusText').textContent = '❌ Falha ao calcular rota';
+                document.getElementById('statusBox').className = 'status-box error';
+                document.getElementById('startBtn').disabled = false;
+                return;
+            }
+
+            currentRoute = routeData.coordinates;
+            currentPointIndex = 0;
+            isSimulating = true;
+            simulationDirection = 'to';
+            
+            // Resetar variáveis de rastreamento
+            tripStartTime = Date.now();
+            totalDistanceTraveled = 0;
+            trailPoints = [];
+            lastPosition = [...homeLocation];
+            
+            // Calcular intervalo baseado na duração real da rota
+            const totalDuration = routeData.duration; // segundos
+            const totalPoints = currentRoute.length;
+            const intervalMs = (totalDuration * 1000) / totalPoints;
+
+            if (routeLine) map.removeLayer(routeLine);
+            if (trailLine) map.removeLayer(trailLine);
+            routeLine = L.polyline(currentRoute, { color: '#4ecca3', weight: 4, opacity: 0.7 }).addTo(map);
+            map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
+
+            if (currentMarker) map.removeLayer(currentMarker);
+            currentMarker = L.marker(currentRoute[0], { icon: carIcon }).addTo(map);
+            currentMarker.bindPopup('<b>🚗 Posição Atual</b>').openPopup();
+
+            document.getElementById('statusText').textContent = '🚗 Indo para o destino...';
+            document.getElementById('statusBox').className = 'status-box';
+            document.getElementById('stopBtn').disabled = false;
+
+            // Loop de simulação com velocidade realista
+            simulationInterval = setInterval(() => {
+                if (currentPointIndex >= currentRoute.length - 1) {
+                    stopSimulation();
+                    document.getElementById('statusText').textContent = '✅ Destino alcançado! Clique em RETORNAR.';
+                    document.getElementById('returnBtn').disabled = false;
+                    currentLocation = destinationLocation;
+                    return;
+                }
+
+                // Verificar semáforo
+                if (shouldStopAtTrafficLight() && !isAtTrafficLight) {
+                    isAtTrafficLight = true;
+                    trafficLightTimer = 30; // 30 segundos parado (simula semáforo)
+                }
+                
+                if (isAtTrafficLight) {
+                    trafficLightTimer--;
+                    if (trafficLightTimer <= 0) {
+                        isAtTrafficLight = false;
+                    }
+                }
+
+                const currentPos = currentRoute[currentPointIndex];
+                const nextPos = currentRoute[currentPointIndex + 1];
+                
+                const distance = calculateDistance(currentPos, nextPos);
+                totalDistanceTraveled += distance;
+                
+                // Calcular velocidade realista
+                currentSpeed = calculateRealisticSpeed(distance, intervalMs / 1000, speedMultiplier);
+                
+                // Calcular direção
+                currentDirection = calculateDirection(lastPosition, currentPos);
+                lastPosition = [...currentPos];
+                
+                // Determinar status de tráfego
+                if (isAtTrafficLight) {
+                    trafficStatus = 'PARADO';
+                } else if (currentSpeed < 20) {
+                    trafficStatus = 'CONGESTIONADO';
+                } else if (currentSpeed < 40) {
+                    trafficStatus = 'LENTO';
+                } else {
+                    trafficStatus = 'LIVRE';
+                }
+                
+                // Adicionar jitter
+                const [jLat, jLng] = addJitter(currentPos[0], currentPos[1]);
+                
+                if (currentMarker) currentMarker.setLatLng([jLat, jLng]);
+                
+                // Adicionar ponto ao rastro
+                trailPoints.push([jLat, jLng]);
+                if (trailLine) map.removeLayer(trailLine);
+                trailLine = L.polyline(trailPoints, { color: '#e94560', weight: 3, opacity: 0.8 }).addTo(map);
+                
+                currentLocation = [jLat, jLng];
+                
+                // Atualizar painel de rastreamento
+                updateTrackerPanel(currentLocation, currentSpeed, currentDirection, trafficStatus);
+                
+                // Atualizar progresso
+                const progress = (currentPointIndex / (currentRoute.length - 1)) * 100;
+                document.getElementById('progressValue').textContent = progress.toFixed(1) + '%';
+                document.getElementById('progressBar').style.width = progress + '%';
+                document.getElementById('satellitesValue').textContent = Math.floor(Math.random() * 5 + 8);
+                document.getElementById('accuracyValue').textContent = Math.floor(Math.random() * 10 + 3) + 'm';
+
+                updateSignalLists();
+                
+                // Reverse geocoding a cada 50 pontos (para não sobrecarregar)
+                if (currentPointIndex % 50 === 0) {
+                    reverseGeocode(currentLocation);
+                }
+
+                currentPointIndex += Math.max(1, Math.ceil(speedMultiplier));
+            }, Math.max(100, intervalMs / speedMultiplier));
+        }
+
+        // RETORNAR ao início
+        async function returnSimulation() {
+            if (!homeLocation || !currentLocation) {
+                alert('Nenhuma posição de início definida!');
+                return;
+            }
+
+            document.getElementById('statusText').textContent = '🏠 Calculando rota de retorno...';
+            document.getElementById('statusBox').className = 'status-box warning pulsing';
+            document.getElementById('returnBtn').disabled = true;
+            document.getElementById('startBtn').disabled = true;
+
+            const routeData = await fetchRoute(currentLocation || destinationLocation, homeLocation);
+            
+            if (!routeData) {
+                document.getElementById('statusText').textContent = '❌ Falha ao calcular rota de retorno';
+                document.getElementById('statusBox').className = 'status-box error';
+                return;
+            }
+
+            currentRoute = routeData.coordinates;
+            currentPointIndex = 0;
+            isSimulating = true;
+            simulationDirection = 'back';
+            
+            // Resetar variáveis
+            tripStartTime = Date.now();
+            totalDistanceTraveled = 0;
+            trailPoints = [];
+            lastPosition = [...(currentLocation || destinationLocation)];
+            
+            const totalDuration = routeData.duration;
+            const totalPoints = currentRoute.length;
+            const intervalMs = (totalDuration * 1000) / totalPoints;
+
+            if (routeLine) map.removeLayer(routeLine);
+            if (trailLine) map.removeLayer(trailLine);
+            routeLine = L.polyline(currentRoute, { color: '#f39c12', weight: 4, opacity: 0.7 }).addTo(map);
+            map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
+
+            document.getElementById('statusText').textContent = '🏠 Retornando ao início...';
+            document.getElementById('statusBox').className = 'status-box';
+            document.getElementById('stopBtn').disabled = false;
+
+            simulationInterval = setInterval(() => {
+                if (currentPointIndex >= currentRoute.length - 1) {
+                    stopSimulation();
+                    document.getElementById('statusText').textContent = '🏠 Retorno completo! Clique em INICIAR para ir novamente.';
+                    document.getElementById('startBtn').disabled = false;
+                    currentLocation = homeLocation;
+                    return;
+                }
+
+                if (shouldStopAtTrafficLight() && !isAtTrafficLight) {
+                    isAtTrafficLight = true;
+                    trafficLightTimer = 30;
+                }
+                
+                if (isAtTrafficLight) {
+                    trafficLightTimer--;
+                    if (trafficLightTimer <= 0) {
+                        isAtTrafficLight = false;
+                    }
+                }
+
+                const currentPos = currentRoute[currentPointIndex];
+                const nextPos = currentRoute[currentPointIndex + 1];
+                
+                const distance = calculateDistance(currentPos, nextPos);
+                totalDistanceTraveled += distance;
+                
+                currentSpeed = calculateRealisticSpeed(distance, intervalMs / 1000, speedMultiplier);
+                currentDirection = calculateDirection(lastPosition, currentPos);
+                lastPosition = [...currentPos];
+                
+                if (isAtTrafficLight) {
+                    trafficStatus = 'PARADO';
+                } else if (currentSpeed < 20) {
+                    trafficStatus = 'CONGESTIONADO';
+                } else if (currentSpeed < 40) {
+                    trafficStatus = 'LENTO';
+                } else {
+                    trafficStatus = 'LIVRE';
+                }
+                
+                const [jLat, jLng] = addJitter(currentPos[0], currentPos[1]);
+                
+                if (currentMarker) currentMarker.setLatLng([jLat, jLng]);
+                
+                trailPoints.push([jLat, jLng]);
+                if (trailLine) map.removeLayer(trailLine);
+                trailLine = L.polyline(trailPoints, { color: '#e94560', weight: 3, opacity: 0.8 }).addTo(map);
+                
+                currentLocation = [jLat, jLng];
+                
+                updateTrackerPanel(currentLocation, currentSpeed, currentDirection, trafficStatus);
+                
+                const progress = (currentPointIndex / (currentRoute.length - 1)) * 100;
+                document.getElementById('progressValue').textContent = progress.toFixed(1) + '%';
+                document.getElementById('progressBar').style.width = progress + '%';
+                document.getElementById('satellitesValue').textContent = Math.floor(Math.random() * 5 + 8);
+                document.getElementById('accuracyValue').textContent = Math.floor(Math.random() * 10 + 3) + 'm';
+
+                updateSignalLists();
+
+                if (currentPointIndex % 50 === 0) {
+                    reverseGeocode(currentLocation);
+                }
+
+                currentPointIndex += Math.max(1, Math.ceil(speedMultiplier));
+            }, Math.max(100, intervalMs / speedMultiplier));
+        }
+
+        // Parar simulação
+        function stopSimulation() {
+            isSimulating = false;
+            if (simulationInterval) {
+                clearInterval(simulationInterval);
+                simulationInterval = null;
+            }
+            document.getElementById('stopBtn').disabled = true;
+            isAtTrafficLight = false;
+        }
+
+        // Gerar sinais simulados
+        function generateCellTowers() {
+            const towers = [
+                { name: 'Vivo-Tower-01', signal: -65 },
+                { name: 'Claro-Cell-02', signal: -72 },
+                { name: 'TIM-Station-03', signal: -78 },
+                { name: 'Oi-Tower-04', signal: -85 }
+            ];
+            return towers.map(t => ({
+                ...t,
+                signal: t.signal + Math.floor(Math.random() * 10 - 5)
+            }));
+        }
+
+        function generateWiFiNetworks() {
+            const networks = [
+                { name: 'WiFi_Casa_2.4G', signal: -45 },
+                { name: 'NET_5G_Fibra', signal: -52 },
+                { name: 'Vivo_ZAP_01', signal: -68 },
+                { name: 'Claro_WiFi_X', signal: -75 },
+                { name: 'TIM_WiFi_5G', signal: -80 }
+            ];
+            return networks.map(n => ({
+                ...n,
+                signal: n.signal + Math.floor(Math.random() * 8 - 4)
+            }));
+        }
+
+        function updateSignalLists() {
+            const towers = generateCellTowers();
+            const wifis = generateWiFiNetworks();
+
+            document.getElementById('cellTowers').innerHTML = towers.map(t => `
+                <li><span> ${t.name}</span><span class="strength">${t.signal} dBm</span></li>
+            `).join('');
+
+            document.getElementById('wifiNetworks').innerHTML = wifis.map(w => `
+                <li><span>📶 ${w.name}</span><span class="strength">${w.signal} dBm</span></li>
+            `).join('');
+        }
+
+        // Controles
+        document.getElementById('speedControl').addEventListener('input', function(e) {
+            speedMultiplier = parseFloat(e.target.value);
+            document.getElementById('speedControlValue').textContent = speedMultiplier + 'x' + (speedMultiplier === 1 ? ' (Tempo Real)' : '');
+        });
+
+        document.getElementById('jitterControl').addEventListener('input', function(e) {
+            jitterAmount = parseInt(e.target.value);
+            document.getElementById('jitterControlValue').textContent = jitterAmount + '%';
+        });
+
+        document.getElementById('startBtn').addEventListener('click', startSimulation);
+        document.getElementById('returnBtn').addEventListener('click', returnSimulation);
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            stopSimulation();
+            document.getElementById('statusText').textContent = '⏹ Simulação parada';
+            document.getElementById('statusBox').className = 'status-box warning';
+        });
+
+        // Enter na busca
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') searchAddress();
+        });
+
+        // Inicializar
+        getUserLocation();
+        updateSignalLists();
+    </script>
+</body>
+</html>
